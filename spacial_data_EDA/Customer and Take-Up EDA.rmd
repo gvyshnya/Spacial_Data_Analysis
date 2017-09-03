@@ -1,0 +1,268 @@
+---
+title: "Take-Up and Client Analysis"
+author: "SBC Sp z o. o."
+date: 'Aug 24, 2017 '
+output:
+  html_document:
+    css: style.css
+    fig_caption: yes
+    highlight: zenburn
+    keep_md: yes
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+  md_document:
+    variant: markdown_github
+  pdf_document:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+  word_document:
+    fig_caption: yes
+---
+
+```{r setup, echo=FALSE, include=TRUE, message=FALSE, warning = FALSE, results='hide'}
+##########################
+### Global settings   ####
+##########################
+
+options(scipen=1)
+knitr::opts_chunk$set(echo = TRUE)
+
+suppressPackageStartupMessages({
+  library(readr)
+  library(plyr)
+  library(dplyr)
+  library(ggplot2)
+  
+  library(cluster)
+  library(factoextra)
+  library(NbClust)
+  library(clValid)
+  library(kohonen)
+  library(fpc)
+  
+  library(hwriter)
+})
+
+########################
+### Read in the data ###
+########################
+fname_copper_clients <- "output/copper_customers_gated_final.csv"
+fname_fibre_clients <- "output/fibre_customers_gated_final.csv"
+
+df_fibre <- read_csv(fname_fibre_clients)
+df_copper <- read_csv(fname_copper_clients)
+
+###############################
+### Slice and dice the data ###
+###############################
+
+# split fiber customer by gated and non-gated communities
+df_fibre_gated <- subset(df_fibre, df_fibre$gated_community_id > -1)
+df_fibre_non_gated <- subset(df_fibre, df_fibre$gated_community_id == -1)
+
+# split copper customer by gated and non-gated communities
+df_copper_gated <- subset(df_copper, df_copper$gated_community_id > -1)
+df_copper_non_gated <- subset(df_copper, df_copper$gated_community_id == -1)
+
+# total customers by community type
+community_type <- c("Gated", "Non-Gated")
+fiber_clients <- c(nrow(df_fibre_gated), nrow(df_fibre_non_gated))
+copper_clients <- c(nrow(df_copper_gated), nrow(df_copper_non_gated))
+
+total_community.data <- data.frame(community_type, fiber_clients)
+
+total_copper_community.data <- data.frame(community_type, copper_clients)
+
+# count of fiber clients by gated community
+df_fiber_by_gated_community <- select(df_fibre_gated, gated_community_id) %>% add_count(gated_community_id)
+df_fiber_by_gated_community <- unique(df_fiber_by_gated_community)
+df_fiber_by_gated_community$fiber_clients <- df_fiber_by_gated_community$n
+df_fiber_by_gated_community <- select(df_fiber_by_gated_community, gated_community_id, fiber_clients)
+
+# count of copper service clients by gated community
+df_copper_by_gated_community <- select(df_copper_gated, gated_community_id) %>% add_count(gated_community_id)
+df_copper_by_gated_community <- unique(df_copper_by_gated_community)
+df_copper_by_gated_community$copper_clients <- df_copper_by_gated_community$n
+df_copper_by_gated_community <- select(df_copper_by_gated_community, gated_community_id, copper_clients)
+
+# merge client counts by gated communities into a single dataframe
+df_gated_community_customers <-merge(x=df_copper_by_gated_community,
+                                     y=df_fiber_by_gated_community,
+                                     by="gated_community_id",all.x=TRUE)
+# fill resulted NA with 0
+df_gated_community_customers[is.na(df_gated_community_customers)] <- 0
+
+##################################################################
+# Clustering Analysis of Customers by Gated Communities
+##################################################################
+
+# Scale variables for clustering - # of fiber and copper clients
+scaled_community_data <- select(df_gated_community_customers, fiber_clients, copper_clients) %>% scale()
+
+# Enhanced hierarchical clustering, cut in 2 groups
+res.hc <- eclust(scaled_community_data, "hclust", k = 2, graph = FALSE) 
+
+# add cluster index to the original dataset
+df_gated_community_customers$cluster <- res.hc$cluster
+
+```
+# Executive Summary
+
+1. Copper service significantly pre-dominates in gated communities vs. non-gated communities
+2. Fibre service has better penetration in gated communities vs. non-gated communities. However, it looks like demand for fiber service has not been saturated in the gated communities yet.
+2. There are 475 gated communities with existing customers in the presented exchange area data set
+3. Out of those 475 gated communites, 55 communities have significant amout of existing customers ( > 50)
+4. It will be rewarding to prioritize further penetration into those 55 gated communities through
++ expedited roll-out of fibre service infrastructure in big gated communities with absolute pre-domination of copper service clientele
++ marketing push to convert existing copper service customers to fibre services in the big gated communities with good penetration of fibre service
+
+# Customer Analysis
+
+## Fiber Clients By Community Type
+
+Below is the bar chart showing the distribution of existing fibre service customers by types of community:
+ 
+```{r fiber_clients_by_community, echo=FALSE}
+ggplot(data=total_community.data, aes(x=community_type, y=fiber_clients, fill=fiber_clients)) +
+  geom_bar(colour="black", stat="identity") +
+  guides(fill=FALSE) +
+  xlab("Type of Community") + ylab("Total clients") +
+  ggtitle("Fibre Clients by Community Type")
+```
+
+## Copper Clients By Community Type
+
+Below is the bar chart showing the distribution of existing copper service customers by types of community:
+
+```{r copper_clients_by_community, echo=FALSE}
+ggplot(data=total_copper_community.data, aes(x=community_type, y=copper_clients, fill=copper_clients)) +
+  geom_bar(colour="black", stat="identity") +
+  guides(fill=FALSE) +
+  xlab("Type of Community") + ylab("Total clients") +
+  ggtitle("Copper Clients by Community Type")
+```
+
+## Clustering Gated Communities by Existing Customers
+Out of <b>475</b> gated communities with existing customers, there were identified 2 significant clusters as follows
+
+- gated communities with smaller number of existing customers (<b>420</b> gated communities)
+- gated communities with larger number - more then <b>50</b> - of existing customers (<b>55</b> gated communities)
+
+The second cluster is further broken down in two subgroups
+
+- gated communities with prevailing copper service customers
+- gated communities with good penetration of fibre service
+
+It would make sense to keep those gated communities in focus to plan for
+- expedited roll-out of fibre service infrastructure for gated communities with large number of copper service clients and no significant presence of fibre service customers
+- marketing push to convert existing copper service customers to fibre in gated communities with good penetration of fibre service
+
+The list of such communities is presented in _Appendix B_.
+
+_Appendix A_ describes the methodology of cluster analysis implemented.
+
+# Appendix A. Cluster Analysis of Gated Communities by Customers
+
+We went through the common steps suggested by classical cluster analysis, in order to detect meaningful clustering of gated communities by 
+
+1. Data preparation
+2. Assessing clustering tendency (i.e., the clusterability of the data)
+3. Defining the optimal number of clusters
+4. Computing partitioning cluster analyses (e.g.: k-means, pam) or hierarchical clustering analyses
+5. Validating clustering analyses: silhouette plot
+
+The sections below wil display detailed results of steps 2-5
+
+## Assessing Cluster Tendency
+
+We can see the gated communities have significant clustering feature, if considering their existing client counts. 
+
+- Hopkins statistic is close to 0 () If the value of Hopkins statistic is close to zero, far below 0.5, then we can conclude that the dataset is significantly clusterable
+- VAT (Visual Assessment of cluster Tendency) diagram also supports significant clustering hypothesis (see below)
+
+```{r cluster_communities_by_clients_tendency, echo=FALSE}
+get_clust_tendency(scaled_community_data, n = 50,
+                   gradient = list(low = "steelblue",  high = "white"))
+
+```
+
+## Defining the Optimal Number of Clusters
+
+It has been statistially proven to see 2 significant clusters in client data for gated communities
+
+```{r cluster_communities_by_clients_optimal_num_of_clusters, warning = FALSE, echo=FALSE}
+
+# detecting the optimal number of clusters
+set.seed(123)
+res.nbclust <- NbClust(scaled_community_data, distance = "euclidean",
+                       min.nc = 2, max.nc = 10, 
+                       method = "complete", index ="all") 
+
+# visualizing it
+factoextra::fviz_nbclust(res.nbclust) + theme_minimal()
+
+```
+
+## Detecting the Optimal Clustering Algorithm
+
+Based on the statistical analysis performed, it has been proved the hierarchical clustering will work the best for this dataset.
+
+```{r cluster_communities_by_clients_algorithm, message=FALSE, warning = FALSE, echo=FALSE}
+# How to choose the appropriate clustering algorithms for your data?
+intern <- clValid(scaled_community_data, nClust = 2:6, 
+                  clMethods = c("hierarchical", "kmeans", "diana", "fanny", "model", 
+                                "sota", "pam", "clara", "agnes"),
+                  validation = "internal") # "som" not applicable
+# Summary
+summary(intern) # hierarchical, 2 clusters
+
+```
+
+## Computing Clusters
+Based on the outcomes of the analysis steps above, the two-cluster hierarchical clustering has been implemented.
+
+```{r cluster_communities_by_clients_computing, message=FALSE, warning = FALSE, echo=FALSE}
+# Visualize 
+fviz_dend(res.hc, rect = TRUE, show_labels = FALSE)
+
+# Visualize clusters
+fviz_cluster(res.hc, geom = "point", ellipse.type = "norm")
+
+```
+
+## Validating clustering analyses: silhouette plot
+Validating the computed clusterind demostrated that
+
+- computed clusters are significant from the statistical stand-point
+- one of the identified clusters has internal heterogenity and needs to be further scrutinized
+
+```{r cluster_communities_by_clients_validation, message=FALSE, warning = FALSE, echo=FALSE}
+# validate the cluster - Visualize the silhouette plot
+fviz_silhouette(res.hc)
+
+```
+
+# Appendix B. Gated Communities with Big Amout of Clients
+```{r cluster_big_client_communities, message=FALSE, warning = FALSE, echo=FALSE, results='asis'}
+# filter gated communities with big number of clients ( > 50)
+df_big_customer_communities <- subset(df_gated_community_customers, cluster == 2)
+df_big_customer_communities <- select(df_big_customer_communities, -cluster)
+
+row_classes <- list()
+
+for(i in 1:nrow(df_big_customer_communities)) {
+    row_style <- c("col","col","col")
+    b<-i
+    row_classes <- c(row_style,b)
+}
+
+cat(hwrite(df_big_customer_communities,
+           border=NA,
+           table.class="t1",
+           row.class=row_classes))
+
+# knitr::kable(df_big_customer_communities, format="html")
+
+```
